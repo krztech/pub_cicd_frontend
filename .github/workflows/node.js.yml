@@ -1,25 +1,36 @@
-name: React CI/CD Pipeline
+name: Universal React Deploy
 
-on:
-  push:
-    branches: [main]
+on: [push]
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: self-hosted
-    
+    env:
+      BUILD_PATH: /home/ubuntu/frontend/_work/pub_cicd_frontend/pub_cicd_frontend/build
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
+    - name: Reset Workspace
+      run: |
+        sudo mkdir -p ${{ env.BUILD_PATH }}
+        sudo chown -R ubuntu:ubuntu ${{ env.BUILD_PATH }}
+        rm -rf ${{ env.BUILD_PATH}}/*
+
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-node@v3
       with:
         node-version: 22.x
         cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Build project
-      run: npm run build
+
+    - name: Install & Build
+      run: |
+        npm ci --no-audit --silent
+        npm run build
+
+    - name: Deploy
+      run: |
+        sudo cp -r build/* ${{ env.BUILD_PATH }}/
+        sudo chown -R www-data:www-data ${{ env.BUILD_PATH }}
+        sudo find ${{ env.BUILD_PATH }} -type d -exec chmod 755 {} \;
+        sudo find ${{ env.BUILD_PATH }} -type f -exec chmod 644 {} \;
+        sudo systemctl reload nginx
