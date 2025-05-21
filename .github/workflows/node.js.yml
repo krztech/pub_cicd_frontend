@@ -1,47 +1,80 @@
-name: Universal React Deploy
+name: React Production Deploy
 
-on: [push]
+on:
+  push:
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: self-hosted
     env:
+      CI: true
       BUILD_PATH: /home/ubuntu/frontend/_work/pub_cicd_frontend/pub_cicd_frontend/build
-
+    
     steps:
-    - name: Reset Workspace
+    # 1. Workspace Preparation (Fixes permission issues)
+    - name: Prepare Workspace
       run: |
         sudo mkdir -p ${{ env.BUILD_PATH }}
-        sudo chown -R ubuntu:ubuntu ${{ env.BUILD_PATH }}
-        rm -rf ${{ env.BUILD_PATH}}/*
+        sudo chown -R ubuntu:ubuntu /home/ubuntu/frontend/_work
+        sudo find /home/ubuntu/frontend/_work -type d -exec chmod 755 {} \;
+        rm -rf ${{ env.BUILD_PATH }}/*
 
+    # 2. Cache Optimization (Speeds up subsequent runs)
+    - uses: actions/cache@v3
+      id: npm-cache
+      with:
+        path: |
+          ~/.npm
+          node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    # 3. Code Checkout
     - uses: actions/checkout@v3
 
+    # 4. Node.js Setup (With built-in caching)
     - uses: actions/setup-node@v3
       with:
         node-version: 22.x
         cache: 'npm'
 
-    - name: Install & Build
+    # 5. Smart Dependency Installation
+    - name: Install Dependencies
       run: |
         if [ -d node_modules ]; then
+          echo "Using cached dependencies"
           npm ci --prefer-offline --no-audit --silent
         else
+          echo "Fresh dependency install"
           npm ci --no-audit --silent
         fi
-    
-    # 5. Fast Production Build
+
+    # 6. Fast Production Build
     - name: Build Project
       run: npm run build --if-present
 
-    # 6. Atomic Deployment
+    # 7. Atomic Deployment (Zero downtime)
     - name: Deploy to Production
       run: |
         TEMP_DIR=$(mktemp -d)
         cp -r build/* $TEMP_DIR/
+        
+        # Atomic sync
         sudo rsync -a --delete $TEMP_DIR/ ${{ env.BUILD_PATH }}/
+        
+        # Secure permissions
         sudo chown -R www-data:www-data ${{ env.BUILD_PATH }}
         sudo find ${{ env.BUILD_PATH }} -type d -exec chmod 755 {} \;
         sudo find ${{ env.BUILD_PATH }} -type f -exec chmod 644 {} \;
-        sudo systemctl reload nginx
+        
+        # Cleanup and reload
         rm -rf $TEMP_DIR
+        sudo systemctl reload nginx
+
+    # 8. Post-Deployment Verification (Optional)
+    - name: Verify Deployment
+      run: |
+        curl -sI http://localhost | grep -q "200 OK" || exit 1
+        echo "Deployment successful"
