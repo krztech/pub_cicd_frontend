@@ -24,13 +24,24 @@ jobs:
 
     - name: Install & Build
       run: |
-        npm ci --no-audit --silent
-        npm run build
+        if [ -d node_modules ]; then
+          npm ci --prefer-offline --no-audit --silent
+        else
+          npm ci --no-audit --silent
+        fi
+    
+    # 5. Fast Production Build
+    - name: Build Project
+      run: npm run build --if-present
 
-    - name: Deploy
+    # 6. Atomic Deployment
+    - name: Deploy to Production
       run: |
-        sudo cp -r build/* ${{ env.BUILD_PATH }}/
+        TEMP_DIR=$(mktemp -d)
+        cp -r build/* $TEMP_DIR/
+        sudo rsync -a --delete $TEMP_DIR/ ${{ env.BUILD_PATH }}/
         sudo chown -R www-data:www-data ${{ env.BUILD_PATH }}
         sudo find ${{ env.BUILD_PATH }} -type d -exec chmod 755 {} \;
         sudo find ${{ env.BUILD_PATH }} -type f -exec chmod 644 {} \;
         sudo systemctl reload nginx
+        rm -rf $TEMP_DIR
