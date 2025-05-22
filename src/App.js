@@ -1,6 +1,5 @@
 import './App.css';
 import MainBanner from './Components/MainBanner';
-import Navbar from './Components/Navbar';
 
 function App() {
   return (
